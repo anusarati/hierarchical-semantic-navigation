@@ -2,6 +2,7 @@ import numpy as np
 import hnswlib
 import networkx as nx
 from typing import List
+from tqdm import tqdm
 
 METRIC = "cosine"
 
@@ -70,12 +71,13 @@ class HierarchicalGraphBuilder:
         G = nx.DiGraph()
         G.add_nodes_from(range(num_elements))
 
-        for i, neighbors in enumerate(labels):
+        for i, neighbors in tqdm(enumerate(labels), total=num_elements, desc="  Centrality Graph"):
             for neighbor in neighbors:
                 if i != neighbor:
                     G.add_edge(i, int(neighbor))
 
         # PageRank
+        print("  Calculating PageRank...")
         pagerank = nx.pagerank(G, alpha=0.85, tol=1e-4)
 
         scores = np.zeros(num_elements, dtype=np.float32)
@@ -111,7 +113,7 @@ class HierarchicalGraphBuilder:
 
         active_count = 0
 
-        for current_doc_idx in sorted_indices:
+        for current_doc_idx in tqdm(sorted_indices, desc="  Hierarchical Insert"):
             current_doc_idx = int(current_doc_idx)
             doc_vec = embeddings[current_doc_idx]
 

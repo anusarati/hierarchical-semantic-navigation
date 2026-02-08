@@ -13,9 +13,12 @@ dependencies = [
     "networkx>=3.6.1",
     "matplotlib>=3.10.8",
     "hnswlib>=0.8.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
 ]
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
 ]
+

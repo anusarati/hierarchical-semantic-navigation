@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Semantic Navigator</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Semantic Document Navigator</h1>
+            <div class="controls">
+                <button id="reset-btn">Reset View</button>
+                <span id="status">Ready</span>
+            </div>
+        </header>
+        
+        <main>
+            <div id="network-container">
+                <div id="network"></div>
+                <div class="legend">
+                    <div><span class="dot root-dot"></span> Broad / Central</div>
+                    <div><span class="dot leaf-dot"></span> Specific / Derived</div>
+                </div>
+            </div>
+            
+            <aside id="sidebar">
+                <div id="details-panel">
+                    <h2 id="doc-title">Select a Document</h2>
+                    <div class="meta" id="doc-id"></div>
+                    <div class="content" id="doc-intro">
+                        Double-click a node to expand its related specific concepts.
+                        Click once to view details here.
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
+

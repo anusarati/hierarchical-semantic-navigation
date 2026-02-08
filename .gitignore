@@ -3,3 +3,6 @@
 *.json
 *.jsonl
 embeddings
+node_modules
+__pycache__
+*.pkl
