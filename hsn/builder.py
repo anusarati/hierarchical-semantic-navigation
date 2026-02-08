@@ -1,9 +1,10 @@
 import numpy as np
 import hnswlib
 import networkx as nx
-from typing import List, Tuple, Dict, Optional
+from typing import List
 
 METRIC = "cosine"
+
 
 class HierarchicalGraphBuilder:
     """

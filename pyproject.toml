@@ -14,3 +14,8 @@ dependencies = [
     "matplotlib>=3.10.8",
     "hnswlib>=0.8.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+]
