@@ -23,16 +23,19 @@ const DEPTH_STEP = 400 * SCALAR;
 const MAX_NODE_SIZE = 250 * SCALAR;        
 const PADDING_FACTOR = 0.9; 
 
+// Font Limits (World Space Units)
+const MAX_FONT_SIZE = 60 * SCALAR; // Cap only the top end
+
 const options = {
     nodes: {
         shape: 'dot',
         font: {
-            size: 20 * SCALAR, 
             face: 'Arial',
             color: '#000000',
-            strokeWidth: 4 * SCALAR, 
             strokeColor: '#ffffff',
-            vadjust: -60 * SCALAR
+            // Global defaults (overridden per node)
+            size: 14,
+            strokeWidth: 0 
         },
         borderWidth: 0, 
         shadow: false,
@@ -42,9 +45,8 @@ const options = {
         }
     },
     edges: {
-        // CHANGED: Reduced from 3 to 0.5 for performance & clarity
         width: 0.5 * SCALAR, 
-        color: { color: '#888888', opacity: 0.3 }, 
+        color: { color: '#666666', opacity: 0.5 }, 
         smooth: false, 
         arrows: { to: { enabled: false } }
     },
@@ -78,6 +80,29 @@ function calculateStrictSize(mass, ringRadius, angleSpan) {
     return Math.min(importanceRadius, geometricMaxRadius, MAX_NODE_SIZE);
 }
 
+/**
+ * Calculates a proportional font configuration.
+ */
+function getFontConfig(nodeRadius) {
+    // 1. Font is 35% of the Node Radius (Strict proportion)
+    let fontSize = nodeRadius * 0.35;
+    
+    // 2. Cap max size so roots don't look ridiculous
+    fontSize = Math.min(fontSize, MAX_FONT_SIZE);
+    
+    // 3. Stroke is 15% of the Font Size (Scales with text)
+    const strokeWidth = fontSize * 0.15;
+    
+    // 4. Offset: Push up by Radius + Font Buffer
+    const vadjust = -(nodeRadius + fontSize * 0.6);
+
+    return {
+        size: fontSize,
+        strokeWidth: strokeWidth,
+        vadjust: vadjust
+    };
+}
+
 // --- SEMANTIC ZOOM ---
 
 let zoomTimeout = null;
@@ -92,14 +117,17 @@ function handleZoom() {
         nodes.forEach(node => {
             const screenRadius = node.size * scale;
             
-            // Rule 1: Visibility
-            // Always show nodes (allow sub-pixel rendering)
+            // Rule 1: Visibility (Always show node)
             let hidden = false; 
 
             // Rule 2: Labels
-            // Threshold: > 15px visual size
+            // Rendered Font Size = WorldFontSize * Scale
+            // Only show if the TEXT ITSELF is readable (> 6px high)
+            const renderedFontSize = node.font.size * scale;
+            
             let label = undefined;
-            if (screenRadius > 15) {
+            // We check renderedFontSize instead of just node radius
+            if (renderedFontSize > 6) {
                 label = node.data.originalLabel;
             }
 
@@ -156,6 +184,9 @@ async function init() {
             const y = r_pos * Math.sin(midAngle);
             
             const size = r_pos > 0 ? calculateStrictSize(mass, r_pos, angleSpan) : MAX_NODE_SIZE;
+            
+            // --- PURE PROPORTIONAL SCALING ---
+            const fontConfig = getFontConfig(size);
 
             newNodes.push({
                 id: node.id,
@@ -163,6 +194,7 @@ async function init() {
                 title: `${node.title}`,
                 size: size,
                 color: { background: getColor(mass) }, 
+                font: fontConfig, 
                 x: x, y: y,
                 data: { ...node, originalLabel: node.label }
             });
@@ -237,6 +269,9 @@ async function expandNode(parentId) {
             const y = newRadius * Math.sin(midAngle);
             
             const size = calculateStrictSize(mass, newRadius, angleSpan);
+            
+            // --- PURE PROPORTIONAL SCALING ---
+            const fontConfig = getFontConfig(size);
 
             newNodes.push({
                 id: child.id,
@@ -244,6 +279,7 @@ async function expandNode(parentId) {
                 title: `${child.title}`,
                 size: size,
                 color: { background: getColor(mass) }, 
+                font: fontConfig,
                 x: x, y: y,
                 data: { ...child, originalLabel: child.label }
             });
