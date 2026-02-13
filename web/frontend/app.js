@@ -16,7 +16,6 @@ const docIdDisplay = document.getElementById('doc-id');
 const docIntro = document.getElementById('doc-intro');
 
 // --- CONSTANTS (SCALED UP 100x) ---
-// We scale the entire coordinate system to avoid sub-pixel rendering issues.
 const SCALAR = 100; 
 
 const BASE_ROOT_RADIUS = 300 * SCALAR;     
@@ -28,15 +27,14 @@ const options = {
     nodes: {
         shape: 'dot',
         font: {
-            // Font size: Large enough to be seen when zoomed in
             size: 20 * SCALAR, 
             face: 'Arial',
             color: '#000000',
-            strokeWidth: 4 * SCALAR, // Thick white outline around text
+            strokeWidth: 4 * SCALAR, 
             strokeColor: '#ffffff',
             vadjust: -60 * SCALAR
         },
-        borderWidth: 0, // <--- FIX: REMOVED BORDER ENTIRELY
+        borderWidth: 0, 
         shadow: false,
         scaling: {
             min: 10, max: MAX_NODE_SIZE, 
@@ -44,8 +42,9 @@ const options = {
         }
     },
     edges: {
-        width: 1 * SCALAR, 
-        color: { color: '#cccccc', opacity: 0.3 },
+        // CHANGED: Reduced from 3 to 0.5 for performance & clarity
+        width: 0.5 * SCALAR, 
+        color: { color: '#888888', opacity: 0.3 }, 
         smooth: false, 
         arrows: { to: { enabled: false } }
     },
@@ -73,13 +72,9 @@ function getColor(mass) {
 }
 
 function calculateStrictSize(mass, ringRadius, angleSpan) {
-    // 1. Importance (Log) -> Scaled
     const importanceRadius = (10 + (Math.log(mass) * 15)) * SCALAR;
-
-    // 2. Geometric Limit
     const availableArc = ringRadius * angleSpan;
     const geometricMaxRadius = (availableArc * PADDING_FACTOR) / 2;
-
     return Math.min(importanceRadius, geometricMaxRadius, MAX_NODE_SIZE);
 }
 
@@ -93,19 +88,18 @@ function handleZoom() {
     zoomTimeout = setTimeout(() => {
         const scale = network.getScale();
         const updates = [];
-
+        
         nodes.forEach(node => {
-            // Screen Radius = World Size * Scale
             const screenRadius = node.size * scale;
             
             // Rule 1: Visibility
-            // If < 1px on screen, hide.
-            let hidden = screenRadius < 1;
+            // Always show nodes (allow sub-pixel rendering)
+            let hidden = false; 
 
             // Rule 2: Labels
-            // Show label if node is decent size (> 15px on screen)
+            // Threshold: > 15px visual size
             let label = undefined;
-            if (!hidden && screenRadius > 15) {
+            if (screenRadius > 15) {
                 label = node.data.originalLabel;
             }
 
@@ -131,8 +125,8 @@ async function init() {
         if(!res.ok) throw new Error("Failed");
         const rootNodes = await res.json();
 
-        // 1. Dynamic Root Ring (SCALED)
-        const minPerRoot = 20 * SCALAR; // Give them space
+        // 1. Dynamic Root Ring
+        const minPerRoot = 20 * SCALAR; 
         const requiredCircumference = rootNodes.length * minPerRoot;
         const requiredRadius = requiredCircumference / (2 * Math.PI);
         const radius = Math.max(BASE_ROOT_RADIUS, requiredRadius);
@@ -168,7 +162,7 @@ async function init() {
                 label: undefined, 
                 title: `${node.title}`,
                 size: size,
-                color: { background: getColor(mass) }, // No border definition
+                color: { background: getColor(mass) }, 
                 x: x, y: y,
                 data: { ...node, originalLabel: node.label }
             });
@@ -181,7 +175,6 @@ async function init() {
         const data = { nodes, edges };
         network = new vis.Network(container, data, options);
         
-        // --- START FAR AWAY ---
         network.moveTo({ scale: 0.005 }); 
         
         network.on("click", p => { if(p.nodes.length) fetchDetails(p.nodes[0]); });
@@ -219,7 +212,6 @@ async function expandNode(parentId) {
 
         const totalChildMass = children.reduce((sum, c) => sum + getMass(c), 0);
         
-        // Move out by scaled step
         const newRadius = pLayout.depthRadius + DEPTH_STEP;
 
         let currentAngle = pLayout.startAngle;
@@ -251,7 +243,7 @@ async function expandNode(parentId) {
                 label: undefined,
                 title: `${child.title}`,
                 size: size,
-                color: { background: getColor(mass) }, // No border
+                color: { background: getColor(mass) }, 
                 x: x, y: y,
                 data: { ...child, originalLabel: child.label }
             });
