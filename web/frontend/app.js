@@ -19,12 +19,13 @@ const docIntro = document.getElementById('doc-intro');
 const SCALAR = 100; 
 
 const BASE_ROOT_RADIUS = 300 * SCALAR;     
-const DEPTH_STEP = 400 * SCALAR;           
+const DEPTH_STEP = 450 * SCALAR;           
 const MAX_NODE_SIZE = 250 * SCALAR;        
 const PADDING_FACTOR = 0.9; 
 
 // Font Limits (World Space Units)
-const MAX_FONT_SIZE = 60 * SCALAR; // Cap only the top end
+// We only cap the MAXIMUM to prevent it from covering the whole screen
+const MAX_FONT_SIZE = 80 * SCALAR;
 
 const options = {
     nodes: {
@@ -32,10 +33,11 @@ const options = {
         font: {
             face: 'Arial',
             color: '#000000',
-            strokeColor: '#ffffff',
-            // Global defaults (overridden per node)
+            strokeColor: '#ffffff', // White outline
+            // Default (will be overridden per node)
             size: 14,
-            strokeWidth: 0 
+            strokeWidth: 4,
+            vadjust: -50
         },
         borderWidth: 0, 
         shadow: false,
@@ -65,6 +67,12 @@ function getMass(node) {
     return 1 + (node.descendant_count || 0);
 }
 
+// Logarithmic Mass for smoother distribution
+function getLogMass(node) {
+    const m = getMass(node);
+    return Math.log2(m + 2);
+}
+
 function getColor(mass) {
     if (mass < 2) return '#a2cffe';      
     if (mass < 20) return '#6ea8fe';     
@@ -81,20 +89,22 @@ function calculateStrictSize(mass, ringRadius, angleSpan) {
 }
 
 /**
- * Calculates a proportional font configuration.
+ * STRICT PROPORTIONAL FONT & STROKE
  */
 function getFontConfig(nodeRadius) {
-    // 1. Font is 35% of the Node Radius (Strict proportion)
-    let fontSize = nodeRadius * 0.35;
+    // 1. Font Size: Strictly 40% of the node radius
+    let fontSize = nodeRadius * 0.4;
     
-    // 2. Cap max size so roots don't look ridiculous
+    // 2. Cap max size slightly to keep huge nodes looking clean
     fontSize = Math.min(fontSize, MAX_FONT_SIZE);
     
-    // 3. Stroke is 15% of the Font Size (Scales with text)
+    // 3. Stroke Width: Strictly 15% of the FONT SIZE
+    // This prevents "blobs" at small scales and "invisible strokes" at large scales
     const strokeWidth = fontSize * 0.15;
     
-    // 4. Offset: Push up by Radius + Font Buffer
-    const vadjust = -(nodeRadius + fontSize * 0.6);
+    // 4. Vertical Adjust:
+    // Move up by Radius (to edge) + Font Size (height) + Small Buffer (10%)
+    const vadjust = -(nodeRadius + fontSize * 1.1);
 
     return {
         size: fontSize,
@@ -117,16 +127,15 @@ function handleZoom() {
         nodes.forEach(node => {
             const screenRadius = node.size * scale;
             
-            // Rule 1: Visibility (Always show node)
+            // Rule 1: Visibility
             let hidden = false; 
 
             // Rule 2: Labels
             // Rendered Font Size = WorldFontSize * Scale
-            // Only show if the TEXT ITSELF is readable (> 6px high)
+            // Show label if text is readable (> 6px high) on screen
             const renderedFontSize = node.font.size * scale;
             
             let label = undefined;
-            // We check renderedFontSize instead of just node radius
             if (renderedFontSize > 6) {
                 label = node.data.originalLabel;
             }
@@ -159,14 +168,16 @@ async function init() {
         const requiredRadius = requiredCircumference / (2 * Math.PI);
         const radius = Math.max(BASE_ROOT_RADIUS, requiredRadius);
 
-        const totalMass = rootNodes.reduce((sum, n) => sum + getMass(n), 0);
+        const totalLogMass = rootNodes.reduce((sum, n) => sum + getLogMass(n), 0);
         
         let currentAngle = 0;
         const newNodes = [];
 
         rootNodes.forEach(node => {
             const mass = getMass(node);
-            const fraction = mass / totalMass;
+            const logMass = getLogMass(node);
+            
+            const fraction = logMass / totalLogMass;
             const angleSpan = fraction * 2 * Math.PI;
 
             const startAngle = currentAngle;
@@ -185,7 +196,7 @@ async function init() {
             
             const size = r_pos > 0 ? calculateStrictSize(mass, r_pos, angleSpan) : MAX_NODE_SIZE;
             
-            // --- PURE PROPORTIONAL SCALING ---
+            // --- APPLY FONT CONFIG ---
             const fontConfig = getFontConfig(size);
 
             newNodes.push({
@@ -242,7 +253,7 @@ async function expandNode(parentId) {
         const pLayout = nodeLayout[parentId];
         if (!pLayout) return;
 
-        const totalChildMass = children.reduce((sum, c) => sum + getMass(c), 0);
+        const totalLogMass = children.reduce((sum, c) => sum + getLogMass(c), 0);
         
         const newRadius = pLayout.depthRadius + DEPTH_STEP;
 
@@ -252,7 +263,9 @@ async function expandNode(parentId) {
 
         children.forEach(child => {
             const mass = getMass(child);
-            const fraction = mass / totalChildMass;
+            const logMass = getLogMass(child);
+            
+            const fraction = logMass / totalLogMass;
             const angleSpan = fraction * pLayout.angleSpan;
 
             const startAngle = currentAngle;
@@ -270,7 +283,7 @@ async function expandNode(parentId) {
             
             const size = calculateStrictSize(mass, newRadius, angleSpan);
             
-            // --- PURE PROPORTIONAL SCALING ---
+            // --- APPLY FONT CONFIG ---
             const fontConfig = getFontConfig(size);
 
             newNodes.push({
