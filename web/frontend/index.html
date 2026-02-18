@@ -4,41 +4,65 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Semantic Navigator</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Semantic Document Navigator</h1>
-            <div class="controls">
-                <button id="reset-btn">Reset View</button>
-                <span id="status">Ready</span>
+            <div class="header-top">
+                <h1>Semantic Document Navigator</h1>
+                <div class="controls">
+                    <div class="nav-controls">
+                        <button id="back-btn" type="button">Back</button>
+                        <button id="forward-btn" type="button">Forward</button>
+                        <button id="up-btn" type="button">Up</button>
+                    </div>
+                    <div class="search-wrap">
+                        <input
+                            id="search-input"
+                            type="search"
+                            placeholder="Search titles..."
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                        <div id="search-results" class="search-results hidden"></div>
+                    </div>
+                    <button id="reset-btn" type="button">Reset</button>
+                    <span id="status">Loading...</span>
+                </div>
             </div>
+            <nav id="breadcrumb" class="breadcrumb"></nav>
         </header>
-        
+
         <main>
             <div id="network-container">
                 <div id="network"></div>
                 <div class="legend">
-                    <div><span class="dot root-dot"></span> Broad / Central</div>
-                    <div><span class="dot leaf-dot"></span> Specific / Derived</div>
+                    <div><span class="dot center-dot"></span> Current Focus</div>
+                    <div><span class="dot child-dot"></span> Child Node</div>
+                    <div><span class="dot bucket-dot"></span> Bucketed Children</div>
                 </div>
             </div>
-            
+
             <aside id="sidebar">
                 <div id="details-panel">
-                    <h2 id="doc-title">Select a Document</h2>
+                    <h2 id="doc-title">All Documents</h2>
                     <div class="meta" id="doc-id"></div>
                     <div class="content" id="doc-intro">
-                        Double-click a node to expand its related specific concepts.
-                        Click once to view details here.
+                        Loading top-level clusters...
+                    </div>
+                </div>
+                <div id="preview-panel">
+                    <h3>Hover Preview</h3>
+                    <div class="meta" id="hover-title">Hover a child node for a preview.</div>
+                    <div class="content" id="hover-intro">
+                        The sidebar above always shows the current focus node. Preview text appears here.
                     </div>
                 </div>
             </aside>
         </main>
     </div>
-    <script src="app.js"></script>
+    <script src="app.js?v=7"></script>
 </body>
 </html>
-
