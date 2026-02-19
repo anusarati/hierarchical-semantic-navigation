@@ -1,6 +1,5 @@
 *.xml
 *.csv
-*.json
 *.jsonl
 embeddings
 node_modules
