@@ -1,4 +1,7 @@
 {
+	"scripts": {
+		"start:api": "uv run uvicorn web.backend.main:app --host 0.0.0.0 --port 8000 --reload"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.14"
 	}

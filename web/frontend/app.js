@@ -6,6 +6,11 @@ import {
 	searchTitles,
 } from "./lib/api.js";
 import {
+	buildSunburstTree,
+	createVirtualTrailEntry,
+	DEFAULT_SUNBURST_CONFIG,
+} from "./lib/sunburst/data.js";
+import {
 	getRefs,
 	hideSearchResults,
 	renderBreadcrumb,
@@ -19,10 +24,6 @@ import {
 } from "./lib/ui.js";
 
 const refs = getRefs();
-const SUNBURST_MAX_DEPTH = 4;
-const SUNBURST_MAX_CHILDREN = 120;
-const SUNBURST_MIN_SHARE = 0.006;
-const SUNBURST_BRANCH_EXPAND_LIMIT = 28;
 
 const state = {
 	pathIds: [],
@@ -32,6 +33,13 @@ const state = {
 	searchToken: 0,
 	searchDebounce: null,
 	viewMode: "columns",
+	sunburst: {
+		virtualTrail: [],
+		pinnedNode: null,
+		hoverNode: null,
+		detailsToken: 0,
+		detailsTimer: null,
+	},
 };
 
 function arraysEqual(a, b) {
@@ -54,80 +62,119 @@ function snapshotPath() {
 	return [...state.pathIds];
 }
 
-function aggregateNodes(items) {
-	if (!items.length) {
-		return [];
+function resetSunburstSelection() {
+	if (state.sunburst.detailsTimer !== null) {
+		clearTimeout(state.sunburst.detailsTimer);
+		state.sunburst.detailsTimer = null;
 	}
-	const total = items.reduce((sum, item) => sum + item.value, 0);
-	const kept = [];
-	let mergedValue = 0;
-	let mergedCount = 0;
-
-	for (let index = 0; index < items.length; index += 1) {
-		const item = items[index];
-		const share = total > 0 ? item.value / total : 0;
-		if (index < SUNBURST_MAX_CHILDREN && share >= SUNBURST_MIN_SHARE) {
-			kept.push(item);
-		} else {
-			mergedValue += item.value;
-			mergedCount += 1;
-		}
-	}
-
-	if (mergedCount > 0) {
-		kept.push({
-			id: null,
-			title: `Other (${mergedCount.toLocaleString()})`,
-			value: Math.max(1, mergedValue),
-			children: [],
-		});
-	}
-	return kept;
+	state.sunburst.pinnedNode = null;
+	state.sunburst.hoverNode = null;
+	state.sunburst.detailsToken += 1;
 }
 
-async function buildSunburstNode(nodeId, title, depth, token) {
-	const base = {
-		id: nodeId,
-		title,
-		value: 1,
-		children: [],
-		depth,
+function clearSunburstVirtualTrail() {
+	state.sunburst.virtualTrail = [];
+	resetSunburstSelection();
+}
+
+function virtualBreadcrumbs() {
+	return state.sunburst.virtualTrail.map((entry) => ({
+		title: entry.title,
+	}));
+}
+
+function getSunburstRootContext(activeId, details) {
+	const trail = state.sunburst.virtualTrail;
+	if (trail.length === 0) {
+		return {
+			kind: "real",
+			nodeId: activeId,
+			title: details.title,
+			pathIds: [...state.pathIds],
+		};
+	}
+
+	const currentVirtual = trail[trail.length - 1];
+	return {
+		kind: "other",
+		title: currentVirtual.title,
+		description: currentVirtual.description,
+		pathIds: [...currentVirtual.parentPathIds],
+		sourceItems: currentVirtual.sourceItems,
+	};
+}
+
+function toVirtualDetails(node) {
+	return {
+		id: SENTINEL_ID,
+		str_id: node.key,
+		title: node.title,
+		intro:
+			node.description ||
+			"Grouped smaller sectors. Double-click to expand this group in place.",
+	};
+}
+
+async function resolveSunburstDetails(node, fallbackDetails) {
+	if (!node) {
+		return fallbackDetails;
+	}
+
+	if (node.kind === "other" || node.kind === "other-root") {
+		return toVirtualDetails(node);
+	}
+
+	if (node.kind === "real") {
+		if (node.id === fallbackDetails.id) {
+			return fallbackDetails;
+		}
+		return getNodeDetails(node.id);
+	}
+
+	return fallbackDetails;
+}
+
+async function updateSunburstDetails(fallbackDetails, renderToken) {
+	const target = state.sunburst.hoverNode ?? state.sunburst.pinnedNode;
+	const detailsToken = ++state.sunburst.detailsToken;
+
+	if (target && target.kind === "real" && target.id !== fallbackDetails.id) {
+		renderDetails({
+			id: target.id,
+			str_id: String(target.id),
+			title: target.title,
+			intro: "Loading description...",
+		});
+	}
+
+	let details = fallbackDetails;
+	try {
+		details = await resolveSunburstDetails(target, fallbackDetails);
+	} catch (error) {
+		console.error(error);
+	}
+	if (renderToken !== state.renderToken || detailsToken !== state.sunburst.detailsToken) {
+		return;
+	}
+	renderDetails(details);
+}
+
+function scheduleSunburstDetails(fallbackDetails, renderToken, delayMs = 0) {
+	if (state.sunburst.detailsTimer !== null) {
+		clearTimeout(state.sunburst.detailsTimer);
+		state.sunburst.detailsTimer = null;
+	}
+
+	const run = () => {
+		state.sunburst.detailsTimer = null;
+		void updateSunburstDetails(fallbackDetails, renderToken);
 	};
 
-	if (depth >= SUNBURST_MAX_DEPTH) {
-		return base;
+	if (delayMs > 0) {
+		state.sunburst.detailsTimer = setTimeout(run, delayMs);
+		return;
 	}
-
-	const rawChildren = await getChildren(nodeId);
-	if (token !== state.renderToken || rawChildren.length === 0) {
-		return base;
-	}
-
-	const weightedChildren = rawChildren.map((child) => ({
-		id: child.id,
-		title: child.title,
-		value: Math.max(1, child.descendant_count + 1),
-		hasChildren: child.has_children,
-		children: [],
-		depth: depth + 1,
-	}));
-
-	const compactChildren = aggregateNodes(weightedChildren);
-	const expandable = compactChildren.slice(0, SUNBURST_BRANCH_EXPAND_LIMIT);
-	for (const child of expandable) {
-		if (!child.id || !child.hasChildren || depth + 1 >= SUNBURST_MAX_DEPTH) {
-			continue;
-		}
-		const hydrated = await buildSunburstNode(child.id, child.title, depth + 1, token);
-		if (token !== state.renderToken) {
-			return base;
-		}
-		child.children = hydrated.children;
-	}
-
-	base.children = compactChildren;
-	base.value = Math.max(1, compactChildren.reduce((sum, child) => sum + child.value, 0));
-	return base;
+	run();
 }
 
 async function buildColumns(pathIds, token) {
@@ -176,15 +223,18 @@ async function render() {
 	setStatus("Loading...");
 
 	try {
-		const columns = await buildColumns(state.pathIds, token);
-		if (!columns || token !== state.renderToken) {
-			return;
-		}
+		let columns = null;
+		if (state.viewMode === "columns") {
+			columns = await buildColumns(state.pathIds, token);
+			if (!columns || token !== state.renderToken) {
+				return;
+			}
 
-		renderColumns(columns, (levelIndex, nodeId) => {
-			const nextPath = state.pathIds.slice(0, levelIndex).concat(nodeId);
-			void setPath(nextPath, { pushHistory: true, clearForward: true });
-		});
+			renderColumns(columns, (levelIndex, nodeId) => {
+				const nextPath = state.pathIds.slice(0, levelIndex).concat(nodeId);
+				void setPath(nextPath, { pushHistory: true, clearForward: true });
+			});
+		}
 
 		const activeId = currentNodeId();
 		const [details, path] = await Promise.all([
@@ -196,30 +246,124 @@ async function render() {
 			return;
 		}
 
-		renderDetails(details);
 		renderBreadcrumb(path, {
 			onRootClick: () => {
+				if (state.pathIds.length === 0) {
+					if (state.sunburst.virtualTrail.length === 0) {
+						return;
+					}
+					clearSunburstVirtualTrail();
+					void render();
+					return;
+				}
 				void setPath([], { pushHistory: true, clearForward: true });
 			},
 			onCrumbClick: (crumbIndex) => {
-				void setPath(state.pathIds.slice(0, crumbIndex + 1), {
+				const nextPath = state.pathIds.slice(0, crumbIndex + 1);
+				if (arraysEqual(nextPath, state.pathIds)) {
+					if (state.sunburst.virtualTrail.length > 0) {
+						clearSunburstVirtualTrail();
+						void render();
+					}
+					return;
+				}
+				void setPath(nextPath, {
 					pushHistory: true,
 					clearForward: true,
 				});
 			},
+			virtualTrail: state.viewMode === "sunburst" ? virtualBreadcrumbs() : [],
+			onVirtualCrumbClick: (virtualIndex) => {
+				state.sunburst.virtualTrail = state.sunburst.virtualTrail.slice(0, virtualIndex + 1);
+				resetSunburstSelection();
+				void render();
+			},
 		});
 
+		let sunburstVisibleCount = 0;
 		if (state.viewMode === "sunburst") {
-			const tree = await buildSunburstNode(activeId, details.title, 0, token);
-			if (token !== state.renderToken) {
+			const rootContext = getSunburstRootContext(activeId, details);
+			const tree = await buildSunburstTree({
+				rootContext,
+				getChildren,
+				isCurrent: () => token === state.renderToken,
+				config: DEFAULT_SUNBURST_CONFIG,
+			});
+			if (!tree || token !== state.renderToken) {
 				return;
 			}
-			renderSunburst(
-				{ title: details.title, children: tree.children, maxDepth: SUNBURST_MAX_DEPTH },
-				(nodeId) => {
-					void setPath([...state.pathIds, nodeId], { pushHistory: true, clearForward: true });
+			sunburstVisibleCount = tree.children.length;
+
+			state.sunburst.pinnedNode = tree.center;
+			state.sunburst.hoverNode = null;
+			renderSunburst(tree, {
+				onHover: (node) => {
+					if (token !== state.renderToken) {
+						return;
+					}
+					state.sunburst.hoverNode = node;
+					scheduleSunburstDetails(details, token, 75);
 				},
-			);
+				onHoverEnd: () => {
+					if (token !== state.renderToken) {
+						return;
+					}
+					state.sunburst.hoverNode = null;
+					scheduleSunburstDetails(details, token);
+				},
+				onClick: (node) => {
+					if (token !== state.renderToken) {
+						return;
+					}
+					state.sunburst.pinnedNode = node;
+					state.sunburst.hoverNode = node;
+					scheduleSunburstDetails(details, token);
+				},
+				onBackgroundClick: () => {
+					if (token !== state.renderToken) {
+						return;
+					}
+					state.sunburst.pinnedNode = tree.center;
+					state.sunburst.hoverNode = null;
+					scheduleSunburstDetails(details, token);
+				},
+				onDoubleClick: (node) => {
+					if (token !== state.renderToken) {
+						return;
+					}
+					if (node.kind === "other") {
+						const nextEntry = createVirtualTrailEntry(node);
+						const currentEntry =
+							state.sunburst.virtualTrail[state.sunburst.virtualTrail.length - 1] ?? null;
+						if (currentEntry && currentEntry.key === nextEntry.key) {
+							return;
+						}
+						state.sunburst.virtualTrail = [nextEntry];
+						resetSunburstSelection();
+						void render();
+						return;
+					}
+					if (node.kind === "real") {
+						void setPath(node.pathIds, { pushHistory: true, clearForward: true });
+					}
+				},
+				onCenterDoubleClick: () => {
+					if (token !== state.renderToken) {
+						return;
+					}
+					if (state.sunburst.virtualTrail.length > 0) {
+						state.sunburst.virtualTrail.pop();
+						resetSunburstSelection();
+						void render();
+						return;
+					}
+					void goUp();
+				},
+			});
+			scheduleSunburstDetails(details, token);
+		} else {
+			resetSunburstSelection();
+			renderDetails(details);
 		}
 
 		updateNavButtons({
@@ -228,7 +372,13 @@ async function render() {
 			canUp: state.pathIds.length > 0,
 		});
 
-		const visibleCount = columns[columns.length - 1]?.items.length ?? 0;
+		let visibleCount = 0;
+		if (state.viewMode === "columns") {
+			const lastColumn = columns ? columns[columns.length - 1] : null;
+			visibleCount = lastColumn?.items.length ?? 0;
+		} else {
+			visibleCount = sunburstVisibleCount;
+		}
 		setStatus(`Ready (${visibleCount.toLocaleString()} items)`);
 	} catch (error) {
 		console.error(error);
@@ -249,6 +399,7 @@ async function setPath(nextPath, { pushHistory, clearForward }) {
 	}
 
 	state.pathIds = [...nextPath];
+	clearSunburstVirtualTrail();
 	await render();
 }
 
@@ -281,6 +432,7 @@ async function resetView() {
 	state.historyBack.length = 0;
 	state.historyForward.length = 0;
 	state.pathIds = [];
+	clearSunburstVirtualTrail();
 	await render();
 }
 
