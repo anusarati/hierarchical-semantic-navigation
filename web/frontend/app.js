@@ -12,11 +12,17 @@ import {
 	renderColumns,
 	renderDetails,
 	renderSearchResults,
+	renderSunburst,
 	setStatus,
+	setViewMode,
 	updateNavButtons,
 } from "./lib/ui.js";
 
 const refs = getRefs();
+const SUNBURST_MAX_DEPTH = 4;
+const SUNBURST_MAX_CHILDREN = 120;
+const SUNBURST_MIN_SHARE = 0.006;
+const SUNBURST_BRANCH_EXPAND_LIMIT = 28;
 
 const state = {
 	pathIds: [],
@@ -25,6 +31,7 @@ const state = {
 	renderToken: 0,
 	searchToken: 0,
 	searchDebounce: null,
+	viewMode: "columns",
 };
 
 function arraysEqual(a, b) {
@@ -45,6 +52,82 @@ function currentNodeId() {
 
 function snapshotPath() {
 	return [...state.pathIds];
+}
+
+function aggregateNodes(items) {
+	if (!items.length) {
+		return [];
+	}
+	const total = items.reduce((sum, item) => sum + item.value, 0);
+	const kept = [];
+	let mergedValue = 0;
+	let mergedCount = 0;
+
+	for (let index = 0; index < items.length; index += 1) {
+		const item = items[index];
+		const share = total > 0 ? item.value / total : 0;
+		if (index < SUNBURST_MAX_CHILDREN && share >= SUNBURST_MIN_SHARE) {
+			kept.push(item);
+		} else {
+			mergedValue += item.value;
+			mergedCount += 1;
+		}
+	}
+
+	if (mergedCount > 0) {
+		kept.push({
+			id: null,
+			title: `Other (${mergedCount.toLocaleString()})`,
+			value: Math.max(1, mergedValue),
+			children: [],
+		});
+	}
+	return kept;
+}
+
+async function buildSunburstNode(nodeId, title, depth, token) {
+	const base = {
+		id: nodeId,
+		title,
+		value: 1,
+		children: [],
+		depth,
+	};
+
+	if (depth >= SUNBURST_MAX_DEPTH) {
+		return base;
+	}
+
+	const rawChildren = await getChildren(nodeId);
+	if (token !== state.renderToken || rawChildren.length === 0) {
+		return base;
+	}
+
+	const weightedChildren = rawChildren.map((child) => ({
+		id: child.id,
+		title: child.title,
+		value: Math.max(1, child.descendant_count + 1),
+		hasChildren: child.has_children,
+		children: [],
+		depth: depth + 1,
+	}));
+
+	const compactChildren = aggregateNodes(weightedChildren);
+	const expandable = compactChildren.slice(0, SUNBURST_BRANCH_EXPAND_LIMIT);
+	for (const child of expandable) {
+		if (!child.id || !child.hasChildren || depth + 1 >= SUNBURST_MAX_DEPTH) {
+			continue;
+		}
+		const hydrated = await buildSunburstNode(child.id, child.title, depth + 1, token);
+		if (token !== state.renderToken) {
+			return base;
+		}
+		child.children = hydrated.children;
+	}
+
+	base.children = compactChildren;
+	base.value = Math.max(1, compactChildren.reduce((sum, child) => sum + child.value, 0));
+	return base;
 }
 
 async function buildColumns(pathIds, token) {
@@ -125,6 +208,19 @@ async function render() {
 				});
 			},
 		});
+
+		if (state.viewMode === "sunburst") {
+			const tree = await buildSunburstNode(activeId, details.title, 0, token);
+			if (token !== state.renderToken) {
+				return;
+			}
+			renderSunburst(
+				{ title: details.title, children: tree.children, maxDepth: SUNBURST_MAX_DEPTH },
+				(nodeId) => {
+					void setPath([...state.pathIds, nodeId], { pushHistory: true, clearForward: true });
+				},
+			);
+		}
 
 		updateNavButtons({
 			canBack: state.historyBack.length > 0,
@@ -243,6 +339,22 @@ function bindEvents() {
 	refs.resetBtn.addEventListener("click", () => {
 		void resetView();
 	});
+	refs.viewColumnsBtn.addEventListener("click", () => {
+		if (state.viewMode === "columns") {
+			return;
+		}
+		state.viewMode = "columns";
+		setViewMode(state.viewMode);
+		void render();
+	});
+	refs.viewSunburstBtn.addEventListener("click", () => {
+		if (state.viewMode === "sunburst") {
+			return;
+		}
+		state.viewMode = "sunburst";
+		setViewMode(state.viewMode);
+		void render();
+	});
 
 	refs.searchInput.addEventListener("input", handleSearchInput);
 	refs.searchInput.addEventListener("keydown", (event) => {
@@ -261,6 +373,7 @@ function bindEvents() {
 
 async function init() {
 	bindEvents();
+	setViewMode(state.viewMode);
 	updateNavButtons({ canBack: false, canForward: false, canUp: false });
 	await render();
 }

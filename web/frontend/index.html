@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Semantic Navigator</title>
-    <link rel="stylesheet" href="styles.css?v=8">
+    <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
     <div class="container">
@@ -27,6 +27,10 @@
                         >
                         <div id="search-results" class="search-results hidden"></div>
                     </div>
+                    <div class="view-toggle" id="view-toggle">
+                        <button id="view-columns-btn" class="view-btn active" type="button">Columns</button>
+                        <button id="view-sunburst-btn" class="view-btn" type="button">Sunburst</button>
+                    </div>
                     <button id="reset-btn" type="button">Reset</button>
                     <span id="status">Loading...</span>
                 </div>
@@ -36,6 +40,10 @@
 
         <main>
             <section id="levels-panel" class="levels-panel"></section>
+            <section id="sunburst-panel" class="sunburst-panel hidden">
+                <svg id="sunburst-svg" class="sunburst-svg" aria-label="Sunburst navigation"></svg>
+                <div id="sunburst-empty" class="sunburst-empty hidden">No children to visualize at this node.</div>
+            </section>
 
             <aside id="sidebar">
                 <div id="details-panel">
@@ -48,6 +56,6 @@
             </aside>
         </main>
     </div>
-    <script type="module" src="app.js?v=8"></script>
+    <script type="module" src="app.js?v=9"></script>
 </body>
 </html>
