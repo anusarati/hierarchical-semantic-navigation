@@ -122,7 +122,7 @@ def main():
     colors = plot_scores
 
     print("Drawing graph...")
-    plt.figure(figsize=(12, 12))
+    plt.figure(figsize=(24, 12))
     ax = plt.gca()
 
     # Draw edges
